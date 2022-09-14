@@ -1,4 +1,3 @@
-from distutils.dep_util import newer_group
 import torch
 from torch.nn import functional as F
 from tqdm import tqdm
