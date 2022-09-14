@@ -13,6 +13,7 @@ class EMDLoss(torch.nn.Module):
         fq = (q * qE).sum() if qE is not None else q.mean()
         return fp - fq 
 
+emd_loss = EMDLoss()
 
 def get_emd(p, q, pE, qE):
     assert p.shape[0] == pE.shape[0]

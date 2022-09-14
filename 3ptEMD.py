@@ -1,3 +1,4 @@
+from distutils.dep_util import newer_group
 import torch
 from torch.nn import functional as F
 from tqdm import tqdm
@@ -8,10 +9,11 @@ from matplotlib.animation import FuncAnimation
 from matplotlib import cm
 import matplotlib as mpl
 from model import get_model
-from util import get_emd, cos_sine
+from util import get_emd, emd_loss
+from data import MultinomialBatch
 
 torch.manual_seed(0)
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.float32)
 
 EPOCHS = 2000
 PLOT = True
@@ -45,8 +47,8 @@ print(emd_true)
 
 
 torch.manual_seed(0 )
-model = get_model(use_norm=True, input_dim=EMBED_DIM, latent_dim=32, always_norm=False)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+model = get_model(use_norm=True, input_dim=EMBED_DIM, latent_dim=128, always_norm=False, ngroups=32//2)
+optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
 optimizer_p = torch.optim.SGD((p, ), lr=1e-1, momentum=0.1, dampening=0.01)
 # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 SCHEDULER = True
@@ -61,12 +63,12 @@ if PLOT:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
     p_numpy, q_numpy, E_p_numpy, E_q_numpy = tensors_numpy()
     if EMBED_DIM == 1:
-        domain = torch.linspace(0, 1, 100).view(-1, 1)
+        domain = torch.linspace(0, 1, 100).view(-1, 1) * scale
         p_numpy = np.hstack([p_numpy, E_p_numpy.reshape(-1, 1) * yscale])
         q_numpy = np.hstack([q_numpy, - E_q_numpy.reshape(-1, 1) * yscale])
         line, = ax2.plot(domain.numpy().flatten(), np.zeros(100), c="black")
     else:
-        linspace = torch.linspace(0, 1, 100)
+        linspace = torch.linspace(0, 1, 100) * scale
         domain = torch.cartesian_prod(linspace, linspace)
         heatmap = ax2.scatter(*domain.T, c=cm.viridis(domain.sum(1)), s=5, marker='s')
     ax1.scatter(p_numpy[:, 0], p_numpy[:, 1], s=E_p * E_scale, c="crimson")
@@ -82,14 +84,26 @@ pbar = tqdm(total=EPOCHS)
 targets = torch.vstack([-torch.ones_like(E_p), torch.ones_like(E_q)])
 # targets = torch.vstack([-torch.zeros_like(E_p), torch.ones_like(E_q)])
 hkr_lambda = 0
-
+batcher = MultinomialBatch(p, q, E_p, E_q)
+def train_step(p, q, Ep=None, Eq=None):
+    fp = model(p)
+    fq = model(q)
+    return emd_loss(fp, fq, Ep, Eq)
 
 def update(i):
     optimizer.zero_grad()
     # optimizer_p.zero_grad()
-    fp = model(p)
-    fq = model(q)
-    loss = (fp * E_p).sum() - (fq * E_q).sum()
+    # some stochastic steps
+    for _ in range(1):
+        p_sample, q_sample = batcher(32)
+        loss = train_step(p_sample, q_sample)
+        loss.backward()
+        optimizer.step()
+        # optimizer_p.step()
+    loss = train_step(p, q, E_p, E_q)
+    # fp = model(p)
+    # fq = model(q)
+    # loss = (fp * E_p).sum() - (fq * E_q).sum()
     emd_nn = - loss.item()
     # loss += hkr_lambda * F.hinge_embedding_loss(
         # torch.vstack([fp, fq]), - targets, margin=1)
