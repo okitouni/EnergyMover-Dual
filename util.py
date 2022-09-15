@@ -40,7 +40,6 @@ def get_emd(p, q, pE, qE):
 
     M = ot.dist(p, q, metric="euclidean")
     emd = ot.emd2(pE, qE, M)
-    
     # # this is not a correct check
     # if p.shape[0] == q.shape[0]:
     #     if (p != q).all() and (pE != qE).all():
@@ -101,3 +100,9 @@ class GradReverse(torch.autograd.Function):
     def backward(ctx, grad_output):
         lambd = ctx.lambd
         return grad_output.neg() * lambd, None
+
+grad_reverse = GradReverse().apply
+
+
+def nearest_neighbor_distance():
+    pass

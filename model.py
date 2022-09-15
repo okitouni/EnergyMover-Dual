@@ -27,18 +27,25 @@ def get_model(
     use_norm=True,
     always_norm=True,
     dropout=0.0,
+    lip_const = 1.0,
+    metric=2
 ):
+    max_norm = lip_const ** (1 / depth + 1)
+    
+    assert metric in [1, 2]
+    norm_kind_input_layer = "two-inf" if metric == 2 else "one-inf"
+    norm_func_input = (
+        partial(direct_norm, kind=norm_kind_input_layer, always_norm=always_norm, max_norm=max_norm)
+        if use_norm
+        else lambda x: x
+    )
     norm_func = (
-        partial(direct_norm, kind="inf", always_norm=always_norm)
+        partial(direct_norm, kind="inf", always_norm=always_norm, max_norm=max_norm)
         if use_norm
         else lambda x: x
     )
-    norm_func_init = (
-        partial(direct_norm, kind="two-inf", always_norm=always_norm)
-        if use_norm
-        else lambda x: x
-    )
-    layers = [norm_func_init(torch.nn.Linear(input_dim, latent_dim))]
+
+    layers = [norm_func_input(torch.nn.Linear(input_dim, latent_dim))]
     layers.append(GroupSort(n_groups=ngroups))
     layers.append(torch.nn.Dropout(dropout))
     for _ in range(depth - 1):
