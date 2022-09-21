@@ -15,7 +15,19 @@ class EMDLoss(torch.nn.Module):
 
 emd_loss = EMDLoss()
 
-def get_emd(p, q, pE, qE):
+def get_emd(p, q, pE, qE, sinkhorn=False):
+    if sinkhorn:
+        M = ot.dist(p, q, metric="euclidean")
+        T = ot.unbalanced.sinkhorn_unbalanced(pE, qE, M, 1, 1e-1)
+        T = T / T.sum()
+        if T.sum().isnan():
+            print("T is nan")
+            print(pE, qE)
+            print(p, q)
+            print(M)
+            print(T)
+            raise ValueError("T is nan")
+        return (M * T).sum()
     assert p.shape[0] == pE.shape[0]
     assert q.shape[0] == qE.shape[0]
     if isinstance(p, torch.Tensor):
