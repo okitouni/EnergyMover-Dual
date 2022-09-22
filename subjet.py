@@ -2,14 +2,14 @@ import torch
 from torch.nn import functional as F
 from tqdm import tqdm
 import numpy as np
-import time
 from matplotlib import pyplot as plt
-from matplotlib import cm
-import matplotlib as mpl
 from model import get_model
 from util import get_emd, emd_loss, grad_reverse, cos_sine
-from data import MultinomialBatch
 import os
+from multiprocessing import Pool
+from itertools import product
+from functools import partial
+# from ray.util.multiprocessing import Pool
 
 def run(
     nsubjet=3,
@@ -117,27 +117,37 @@ def run(
 
 
 def main(
+i,
 nsubjet = 3,
 nclusters = 3,
-nparticles = 10
+nparticles = 10,
 ):
-    for i in range(100):
-        fname = f"logs/subjet_{nsubjet}_{nclusters}_{nparticles}({i}).txt"
-        if os.path.exists(fname):
-            continue
-        with open(fname, "w") as f:
-            seed = nsubjet * 100 + nclusters * 10 + nparticles + i
-            emd_nn, emd_true, last_emd_nn, last_emd, p_min, p, q = run(
-                nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles, seed=seed
-            )
-            f.write(f"{emd_nn:.3f}, {emd_true:.3f}, {last_emd_nn:.3f}, {last_emd:.3f}\n")
-            np.savetxt(f, p_min.detach().numpy())
-            np.savetxt(f, p.detach().numpy())
-            np.savetxt(f, q.detach().numpy())
-pbar = tqdm(range(4*4*4), leave=False, position=1)
-for nsubjet in [3, 4, 5, 6]:
-    for nclusters in [3, 4, 5, 6]:
-        for nparticles in [10, 20, 30, 40]:
-            pbar.set_description(f"{nsubjet}, {nclusters}, {nparticles}")
-            main(nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles)
-            pbar.update()
+    fname = f"logs/subjet_{nsubjet}_{nclusters}_{nparticles}({i}).txt"
+    if os.path.exists(fname):
+        return
+    with open(fname, "w") as f:
+        seed = nsubjet * i**2 + nclusters * i + nparticles
+        emd_nn, emd_true, last_emd_nn, last_emd, p_min, p, q = run(
+            nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles, seed=seed
+        )
+        f.write(f"{emd_nn:.3f}, {emd_true:.3f}, {last_emd_nn:.3f}, {last_emd:.3f}\n")
+        np.savetxt(f, p_min.detach().numpy())
+        np.savetxt(f, p.detach().numpy())
+        np.savetxt(f, q.detach().numpy())
+
+nsubjets = np.arange(3, 7)
+nclusters = np.arange(3, 7)
+nparticles = np.arange(10, 21, 10)
+all_inputs = list(product(nsubjets, nclusters, nparticles))
+pbar = tqdm(range(len(all_inputs)), position=1)
+
+# # need to multiprocess this
+# pool = Pool(32)
+# pool.imap_unordered(main, all_inputs)
+
+for i in pbar:
+    nsubjet, nclusters, nparticles = all_inputs[i]
+    pbar.set_description(f"{nsubjet}, {nclusters}, {nparticles}")
+    run_wrapper = partial(main, nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles)
+    pool = Pool(1)
+    pool.map(run_wrapper, range(10))
