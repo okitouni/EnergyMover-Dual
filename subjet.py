@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from model import get_model
 from util import get_emd, emd_loss, grad_reverse, cos_sine
 import os
-from multiprocessing import Pool
+# from multiprocessing import Pool
 from itertools import product
 from functools import partial
 # from ray.util.multiprocessing import Pool
@@ -34,7 +34,9 @@ def run(
     E_p = torch.ones(len(p)).view(-1, 1) / len(p)
 
     q = torch.rand(nclusters, 2) * scale
-    q = q.view(1, -1, 2) + torch.randn(nparticles, nclusters, 2) * 0.1
+    q =  q.view(1, -1, 2) 
+    true_q_centers = q.view(-1, 2)
+    q = q + torch.randn(nparticles, nclusters, 2) * 0.1
     q = q.view(-1, 2)
     E_q = torch.ones(len(q)).view(-1, 1) / len(q)
 
@@ -90,30 +92,31 @@ def run(
             pbar.update()
         return emd_nn, emd_true
 
-    def update(i, *args):
-        step(STEPS)
-        sc = args[0]
-        sc.set_offsets(p.detach().numpy())
-        return args
+    # def update(i, *args):
+    #     step(STEPS)
+    #     sc = args[0]
+    #     sc.set_offsets(p.detach().numpy())
+    #     return args
 
-    def init():
-        fig, ax = plt.subplots()
-        sc = ax.scatter(*tensors_numpy(p)[0].T, c="r")
-        ax.scatter(*tensors_numpy(q)[0].T, c="b")
-        return fig, ax, sc
+    # def init():
+    #     fig, ax = plt.subplots()
+    #     sc = ax.scatter(*tensors_numpy(p)[0].T, c="r")
+    #     ax.scatter(*tensors_numpy(q)[0].T, c="b")
+    #     return fig, ax, sc
 
     # fig, ax, sc = init()
     # ani = FuncAnimation(fig, update, frames=range(EPOCHS//STEPS), init_func=init, fargs=(sc, ), blit=True)
     # ani.save("3subjet.mp4", dpi=300, fps=30)
     emd_nn_min = 1e10
-    emd_min = -1
+    emd_min = 1e10
     for i in range(EPOCHS):
         emds = step(1)
-        if emds[0] < emd_nn_min:
-            emd_nn_min = emds[0]
-            emd_min = emds[1]
-            p_min = p.detach().clone()
-    return emd_min, emd_nn_min, *emds, p_min, p.data.detach(), q
+        if i > EPOCHS/10:
+            # if emds[0] <= emd_nn_min:
+            if emds[1] <= emd_min:
+                emd_nn_min, emd_min = emds
+                p_min = p.detach().clone()
+    return emd_min, emd_nn_min, *emds, p_min, p.data.detach(), q, true_q_centers
 
 
 def main(
@@ -127,17 +130,18 @@ nparticles = 10,
         return
     with open(fname, "w") as f:
         seed = nsubjet * i**2 + nclusters * i + nparticles
-        emd_nn, emd_true, last_emd_nn, last_emd, p_min, p, q = run(
+        emd_nn, emd_true, last_emd_nn, last_emd, p_min, p, q, true_q_centers = run(
             nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles, seed=seed
         )
         f.write(f"{emd_nn:.3f}, {emd_true:.3f}, {last_emd_nn:.3f}, {last_emd:.3f}\n")
         np.savetxt(f, p_min.detach().numpy())
         np.savetxt(f, p.detach().numpy())
         np.savetxt(f, q.detach().numpy())
+        np.savetxt(f, true_q_centers.detach().numpy())
 
-nsubjets = np.arange(3, 7)
-nclusters = np.arange(3, 7)
-nparticles = np.arange(10, 21, 10)
+nsubjets = np.arange(3, 6)
+nclusters = np.arange(3, 6)
+nparticles = [10]
 all_inputs = list(product(nsubjets, nclusters, nparticles))
 pbar = tqdm(range(len(all_inputs)), position=1)
 
@@ -149,5 +153,7 @@ for i in pbar:
     nsubjet, nclusters, nparticles = all_inputs[i]
     pbar.set_description(f"{nsubjet}, {nclusters}, {nparticles}")
     run_wrapper = partial(main, nsubjet=nsubjet, nclusters=nclusters, nparticles=nparticles)
-    pool = Pool(1)
-    pool.map(run_wrapper, range(10))
+    # pool = Pool()
+    # pool.map(run_wrapper, range(10))
+    for i in range(0, 100):
+        run_wrapper(i)
